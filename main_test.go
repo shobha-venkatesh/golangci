@@ -1,26 +1,38 @@
 package main
 
 import (
-	"github.com/aws/aws-lambda-go/events"
-	"github.com/stretchr/testify/assert"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
-func TestHandler(t *testing.T) {
+func TestVersionHandler(t *testing.T) {
 
-	request := events.APIGatewayProxyRequest{}
-	expectedResponse := events.APIGatewayProxyResponse{
-		StatusCode: 200,
-		Headers: map[string]string{
-			"Content-Type": "text/html",
-		},
-		Body: "Congratulations",
+	// Create a request to pass to our handler
+	req, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	response, err := Handler(request)
+	// Create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(versionHandler)
 
-	assert.Equal(t, response.Headers, expectedResponse.Headers)
-	assert.Contains(t, response.Body, expectedResponse.Body)
-	assert.Equal(t, err, nil)
+	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
+	// directly and pass in our Request and ResponseRecorder.
+	handler.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// Check the response body is what we expect.
+	expected := version
+	if rr.Body.String() != expected {
+		t.Errorf("handler returned unexpected body: got %v want %v",
+			rr.Body.String(), expected)
+	}
 
 }

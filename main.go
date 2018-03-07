@@ -1,31 +1,21 @@
 package main
 
 import (
-	"io/ioutil"
-
-	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
+	"io"
+	"log"
+	"net/http"
 )
 
-// Handler is executed by AWS Lambda in the main function. Once the request
-// is processed, it returns an Amazon API Gateway response object to AWS Lambda
-func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+const version string = "2.0.1"
 
-	index, err := ioutil.ReadFile("public/index.html")
-	if err != nil {
-		return events.APIGatewayProxyResponse{}, err
-	}
-
-	return events.APIGatewayProxyResponse{
-		StatusCode: 200,
-		Body:       string(index),
-		Headers: map[string]string{
-			"Content-Type": "text/html",
-		},
-	}, nil
-
+// VersionHandler handles incoming requests to /version
+// and just returns a simple version number
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	io.WriteString(w, version)
 }
 
 func main() {
-	lambda.Start(Handler)
+	log.Printf("Listening on port 8000...")
+	http.HandleFunc("/version", versionHandler)
+	http.ListenAndServe(":8000", nil)
 }

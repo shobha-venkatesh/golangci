@@ -1,55 +1,153 @@
-Welcome to the AWS CodeStar sample web application
-==================================================
+# Deployment Pipeline for Go Applications on AWS
 
-This sample code helps get you started with a simple Go web application deployed by AWS CloudFormation to AWS Lambda and Amazon API Gateway.
+![pipeline-screenshot](images/pipeline-screenshot.png)
 
-What's Here
------------
+This repository provides an easy-to-deploy pipeline for the development, testing, building and deployment of applications written in Go. Although this example is tailored to Go, it can be easily modified to deploy applications written in other languages too.
 
-This sample includes:
+Services Used:
+ 
+ * [AWS CodePipeline](https://aws.amazon.com/codepipeline/) for pipeline creation.
+ * [AWS CodeBuild](https://aws.amazon.com/codebuild/) for testing and building your Go application(s).
+ * [AWS CloudFormation](https://aws.amazon.com/cloudformation/) for deploying infrastructure (Infrastructure-as-Code).
+ * [AWS CodeDeploy](https://aws.amazon.com/codedeploy/) for zero downtime deployments of your application(s). 
 
-* README.md - this file
-* buildspec.yml - this file is used by AWS CodeBuild to package your
-  application for deployment to AWS Lambda
-* main.go - this file contains the sample Go code for the web application
-* main_test.go - this file contains unit tests for the sample Go code
-* template.yml - this file contains the AWS Serverless Application Model (AWS SAM) used
-  by AWS CloudFormation to deploy your application to AWS Lambda and Amazon API
-  Gateway.
+This pipeline allows you easily apply [continuous delivery](https://aws.amazon.com/devops/continuous-delivery/) or [continuous deployment](https://aws.amazon.com/devops/continuous-delivery/) principles to your development lifecycle. 
+
+![cicd-overview](images/cicd-overview.png)
+
+## Table of Contents
+
+* [What's in the box?](#what's-in-the-box?)
+ * [Source Control](#source-control)
+ * [Build / Test](#build--test)
+ * [Infrastructure-as-Code](#infrastructure-as-code)
+ * [Zero Downtime Application Deployment](#zero--downtime-application-deployment-staging-production)
+ * [Per Environment Configuration](#per-environment-configuration)
+ * [Optional manual gate for Production](#optional-manual-gate-before-production)
+* [How do I deploy this?](#how-do-i-deploy-this)
+ * [Fork the repository](#1-fork-this-github-repository-to-your-github-account)
+ * [Deploy the pipeline to your AWS account](#2-deploy-the-pipeline-to-your-aws-account)
+ * [Develop, deploy, iterate!](#3-develop-deploy-iterate)
+* [How does this work?](#how-does-this-work)
+ * [Stage: Source](#stage-source)
+ * [Stage: Test & Build](#stage-test--build) 
+ * [Stage: Deploy to Staging](#stage-deploy-to-staging)
+ * [Stage: Manual Approvals (optional)](#stage-manual-approvals)
+ * [Stage: Deploy to Production](#stage-deploy-to-production)
 
 
-What Do I Do Next?
-------------------
+## What's in the box?
+ 
+### Source control
 
-If you have checked out a local copy of your repository you can start making
-changes to the sample code.  We suggest making a small change to main.go first,
-so you can see how changes pushed to your project's repository are automatically
-picked up by your project pipeline and deployed to AWS Lambda and Amazon API Gateway.
-(You can watch the pipeline progress on your AWS CodeStar project dashboard.)
-Once you've seen how that works, start developing your own code, and have fun!
+A pipeline will be configured in [AWS CodePipeline](https://aws.amazon.com/codepipeline). It will automatically monitor a [GitHub](https://github.com) repository for modifications to  applications or infrastructure and push them through the delivery pipeline. 
 
-To run your test locally, go to the root directory of the sample code and
-run the `go test` command, which AWS CodeBuild also runs through your
-`buildspec.yml` file.
+### Build/test
+ 
+[AWS CodeBuild](https://aws.amazon.com/codebuild) will be used to:
 
-To test your new code during the release process, modify the existing tests or
-add tests for any new packages you create. AWS CodeBuild will run the tests during
-the build stage of your project pipeline. You can find the test results in the
-AWS CodeBuild console.
+ - Run any tests included in the project (using `go test`).
+ - Check for code lint errors (using `golint`).
+ - Build your Go application.
+ - Archive all build artifacts to S3.
 
-Learn more about AWS CodeBuild and how it builds and tests your application here:
-https://docs.aws.amazon.com/codebuild/latest/userguide/concepts.html
+To read or modify the [AWS CodeBuild](https://aws.amazon.com/codebuild) configuration, see [buildspec.yml](buildspec.yml).
+ 
+### Infrastructure as code
 
-Learn more about AWS Serverless Application Model (AWS SAM) and how it works here:
-https://github.com/awslabs/serverless-application-model/blob/master/HOWTO.md
+[AWS CloudFormation](https://aws.amazon.com/cloudformation) will be used to deploy a staging and production environment suitable for hosting Go applications on AWS. This is incorporated into the same pipeline as the application development. Infrastructure for the staging and production environments will be automatically deployed as required.
 
-AWS Lambda Developer Guide:
-https://docs.aws.amazon.com/lambda/latest/dg/deploying-lambda-apps.html
+By default, this will configure:
 
-Learn more about AWS CodeStar by reading the user guide, and post questions and
-comments about AWS CodeStar on our forum.
+ - A [VPC](https://aws.amazon.com/vpc), with public and private subnets across multiple [Availability Zones (AZs)](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html).
+ - An [Application load balancer](https://aws.amazon.com/elasticloadbalancing/applicationloadbalancer/) in the public subnets.
+ - An [Auto Scaling group](https://aws.amazon.com/autoscaling/) of EC2 instances in private subnets.
+ - [NAT gateways](http://docs.aws.amazon.com/AmazonVPC/latest/UserGuide/vpc-nat-gateway.html) to allow outbound internet access from the private subnets.
 
-AWS CodeStar User Guide:
-http://docs.aws.amazon.com/codestar/latest/userguide/welcome.html
+The following diagram shows an overview of the infrastructure deployed for each environment (staging and production):
 
-AWS CodeStar Forum: https://forums.aws.amazon.com/forum.jspa?forumID=248
+
+You can read or modify the infrastructure deployed in [cloudformation/infrastructure.yml](cloudformation/infrastructure.yml).
+
+### Zero-downtime application deployment (staging/production)
+
+A sample Go application is included (see [main.go](main.go)) that acts as a simple webserver. 
+
+When changes are made to the Go application, [AWS CodePipeline](https://aws.amazon.com/codepipeline) will automatically take the changes through the deployment pipeline.
+
+[AWS CodeBuild](https://aws.amazon.com/codebuild) will run all tests, build the application, and then archive successful builds to [Amazon S3](https://aws.amazon.com/s3).
+
+[AWS CodeDeploy](https://aws.amazon.com/codedeploy) will deploy the new application version to the [Auto Scaling group](https://aws.amazon.com/autoscaling) of [Amazon EC2](https://aws.amazon.com/ec2/) instances. By default, [AWS CodeDeploy](https://aws.amazon.com/codedeploy) will use the `CodeDeployDefault.OneAtATime` deployment strategy. However you can modify the [per-environment configuration](#per-environment-configuration) to use any of the strategies listed [here](http://docs.aws.amazon.com/codedeploy/latest/userguide/deployment-configurations.html).
+ 
+### Per-environment configuration
+
+In the [config/](config/) directory you will find a configuration file for each environment that you can use to override key settings, such as the [AWS CodeDeploy](https://aws.amazon.com/codedeploy) deployment strategy, instance types, and Auto Scaling group sizes.
+
+Here is an example:
+
+```json
+{
+    "Parameters": {
+        "InstanceType": "t2.micro",
+        "InstanceCount": "2",
+        "DeploymentStrategy": "CodeDeployDefault.OneAtATime",
+        "VpcCIDR": "10.193.0.0/16",
+        "PublicSubnet1CIDR": "10.193.10.0/24",
+        "PublicSubnet2CIDR": "10.193.11.0/24",
+        "PrivateSubnet1CIDR": "10.193.20.0/24",
+        "PrivateSubnet2CIDR": "10.193.21.0/24"
+    }
+}
+```
+
+See:
+
+ * [config/staging.conf](config/staging.conf) 
+ * [config/production.conf](config/production.conf)
+
+Any changes made and committed back to your repository will be run through the pipeline and applied to the infrastructure/application automatically.
+
+ 
+
+## How does this work?
+
+### Stage: Source
+
+![pipeline-stage-source](images/pipeline-stage-source.png)
+
+A hook is used to notify [AWS CodePipeline](https://aws.amazon.com/codepipeline) of any updates to your GitHub repository. This will trigger the `Source` stage of your pipeline automatically.
+
+### Stage: Test and Build
+
+
+[AWS CodeBuild](https://aws.amazon.com/codebuild) will then run your application tests, check code linting and build your application. After a successful build, it will archive the build artifact(s) to the [Amazon S3](https://aws.amazon.com/s3) bucket provided when you deployed your pipeline.
+
+If there are any failures in your test or build process, they will be displayed in the [AWS CodePipeline](https://aws.amazon.com/codepipeline) console. Click on the **Detail** link in the pipeline stage to see the full build log. This will help you identify the reason for the failure.
+
+
+### Stage: Deploy to staging 
+
+
+This stage uses [AWS CodePipeline's ability to deploy with AWS CloudFormation](https://aws.amazon.com/blogs/aws/codepipeline-update-build-continuous-delivery-workflows-for-cloudformation-stacks/).
+
+It will deploy the infrastructure for the staging environment (as defined in [cloudformation/infrastructure.yml](cloudformation/infrastructure.yml)). 
+
+The first time the pipeline stage runs, it will create the environment from scratch. On future runs, it will apply any updates through a [CloudFormation stack update](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks.html). 
+
+It will also use [AWS CodeDeploy](https://aws.amazon.com/codedeploy) to deploy and validate the application. You can see the [AWS CodeDeploy](https://aws.amazon.com/codedeploy) configuration in [appspec.yml](appspec.yml)
+
+### Stage: Manual Approvals 
+
+![pipeline-stage-source](images/pipeline-stage-approvals.png)
+
+This pipeline includes an (optional) manual approval stage between the staging and production environments. This can be useful if you are not yet at the stage where you can move to fully automated continuous deployment.
+
+The approval can be configured to trigger an [Amazon Simple Notification Service (SNS)](https://aws.amazon.com/sns) notification. This allows you to notify approvers of pending actions through Email, SMS or a custom [AWS Lambda](https://aws.amazon.com/lambda) function.
+
+### Stage: Deploy to production 
+
+![pipeline-stage-source](images/pipeline-stage-production.png)
+
+This stage deploys a whole new environment (everything in the architecture diagram) for your production environment. This ensures an identical configuration between environments, reducing false positives in your testing. 
+
+The first time the pipeline stage runs, it will create the environment from scratch. On future runs of the pipeline, it will apply any updates via a [CloudFormation stack update](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks.html).
